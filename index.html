@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+
+<head>
+    <meta content="Texcity 2" property="og:title"/>
+    <meta content="A game or something" property="og:description"/>
+    <meta content="#6b03fc" data-react-helmet="true" name="theme-color"/>
+    <title>Texcity 2</title>
+    <script src="game.js" defer></script>
+    <link rel="stylesheet" href="main.css">
+    <meta name="viewport" content="width=600">
+</head>
+
+<body>
+    <div id="Main">
+        
+    </div>
+    <div id="MainTransition"></div>
+    <div id="Sidebar" style="display: block">
+        <div class="SidebarText" id="GameTitle">Texcity 2 v?</div>
+        <div id="SidebarStats">
+            <div class="SidebarText" id="SidebarFatigue">Fatigue: 0/100</div>
+            <div class="SidebarText" id="SidebarHealth">Health: 100/100</div>
+        </div>
+        <div id="SidebarButtons">
+            <button class="SidebarButtons" id="StatsButton">Stats</button>
+            <button class="SidebarButtons" id="InventoryButton">Inventory</button>
+            <button class="SidebarButtons" id="DebugButton" style="display: none;">Debug</button>
+        </div>
+    </div>
+    
+    <div id="Topbar">
+        <div class="TopbarText" id="Money">$0</div>
+        <div class="TopbarText" id="Clock">07:00</div>
+        <div class="TopbarText" id="Day">Day: 1 Sat</div>
+    </div>
+    <button id="SidebarToggle">&lt;</button>
+
+    <div id="ui">
+        <div id="Stats" style="display: none">Stats
+            <div id="StatItems">
+                <div id="STAT_Playtime" class="PopupText">Play Time:</div>
+            </div>
+        </div>
+        
+        <div id="Inventory" style="display: none">Inventory
+            <div id="InventoryItems">
+
+            </div>
+        </div>
+
+        <div id="Debug" style="display: none">Debug
+            <br>
+            <div id="AutocompleteContainer">
+                <input type="text" id="SceneJumpInput" placeholder="Scene Name">
+                <div id="AutocompleteSuggestions"></div>
+            </div>
+            <button class="UiLink" id="SceneJump">Jump</button>
+            <button class="UiLink" id="TimeSkip1">+1hr</button>
+            <button class="UiLink" id="TimeSkip3">+3hr</button>
+            <button class="UiLink" id="ReloadScene">Reload Scene</button>
+            <button class="UiLink" id="Max">Max</button>
+            <input type="text" id="ForceRng" placeholder="Force rng">
+            <button class="UiLink" id="SetRng">Set rng</button>
+        </div>
+    </div>
+</body>
