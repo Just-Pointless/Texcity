@@ -18,7 +18,7 @@ var Checks = {}
 var Jobs = {}
 var OfficeRank = 0
 var OfficePromotionXP = 0
-var Skills = {"Communication": 0, "Foraging": 0, "Science": 0, "English": 0, "Math": 0, "Business": 0, "History": 0, "Fitness": 0, "Technology": 0, "Lockpicking": 0, "Dexterity": 0}
+var Skills = {"Communication": 0, "Foraging": 0, "Science": 0, "English": 0, "Math": 0, "Business": 0, "History": 0, "Fitness": 0, "Technology": 0, "Lockpicking": 0, "Dexterity": 0, "Fishing": 0}
 var SkillXp = structuredClone(Skills)
 var Cooldowns = {}
 var Inventory = {}
@@ -26,6 +26,8 @@ var Playtime = 0
 var Debt = 10000
 var DebtDue = 0
 var Counts = {}
+var Owned = {}
+var EquippedRod = null
 
 var ForcedRng = -1
 
@@ -51,15 +53,45 @@ const LINK_REGEX = new RegExp("\\{([^|{}]+)\\|([^|{}]+)\\|([0-9]+)\\|?([^|{}(]+)
 const TEXT_SPLITTER = new RegExp("{[^}]{1,}}", "g")
 const IMAGE_REGEX = new RegExp("!\\[(.*?)\\]", "g")
 const ITEM_DATA = {
-    "RedBerry": {"Name": "Red Berries", "Usable": false},
-    "BlueBerry": {"Name": "Blue Berries", "Usable": false},
-    "GreenBerry": {"Name": "Green Berries", "Usable": false},
+    "RedBerry": {"Name": "Red Berries"},
+    "BlueBerry": {"Name": "Blue Berries"},
+    "GreenBerry": {"Name": "Green Berries"},
     "Moonberry": {"Name": "Moonberries", "Usable": true},
-    "PurpleBerry": {"Name": "Purple Berries", "Usable": false},
-    "YellowBerry": {"Name": "Yellow Berries", "Usable": false},
-    "SeaShell": {"Name": "Sea Shells", "Usable": false},
+    "PurpleBerry": {"Name": "Purple Berries"},
+    "YellowBerry": {"Name": "Yellow Berries"},
+    "SeaShell": {"Name": "Sea Shells"},
+    "Goldfish": {"Name": "Goldfish"},
+    "Salmon": {"Name": "Salmon"},
+    "Trout": {"Name": "Trout"},
+    "Bass": {"Name": "Bass"},
+    "Catfish": {"Name": "Catfish"},
+    "Tuna": {"Name": "Tuna"},
+    "Shark": {"Name": "Shark"}
+}
+const SUBJECT_STATS = {
+    "Science": {"xp": 10, "Fatigue": 10, "Time": 585},
+    "English": {"xp": 10, "Fatigue": 10, "Time": 635},
+    "Math": {"xp": 10, "Fatigue": 10, "Time": 715},
+    "Business": {"xp": 10, "Fatigue": 10, "Time": 765},
+    "History": {"xp": 10, "Fatigue": 10, "Time": 845},
+    "PE": {"xp": 10, "Fatigue": 20, "Time": 895},
+    "Technology": {"xp": 10, "Fatigue": 5, "Time": 945}
 }
 const DEBT_SCALING = [0, 100, 200, 300, 500, 750, 1000, 1250, 1500, 1750, 2000, 650]
+const RODS = {
+    "BasicRod": {"Name": "Basic Rod", "FishMin": 1, "FishMax": 3, "Price": 50},
+    "AdvancedRod": {"Name": "Advanced Rod", "FishMin": 2, "FishMax": 5, "Price": 200},
+    "MasterRod": {"Name": "Master Rod", "FishMin": 3, "FishMax": 7, "Price": 500}
+}
+const FISH = [
+    {"Name": "Goldfish", "Chance": 0.50, "Price": 2},
+    {"Name": "Salmon", "Chance": 0.25, "Price": 3},
+    {"Name": "Trout", "Chance": 0.10, "Price": 5},
+    {"Name": "Bass", "Chance": 0.05, "Price": 7},
+    {"Name": "Catfish", "Chance": 0.03, "Price": 10},
+    {"Name": "Tuna", "Chance": 0.01, "Price": 20},
+    {"Name": "Shark", "Chance": 0.005, "Price": 30}
+]
 
 // Scenes
 class Scenes {
@@ -169,7 +201,43 @@ class Scenes {
     }
 
     static Beach() {
-        return "You are on the beach. The waves crash against the shore rhythmically, leaving trails of foam on the sand.\n\n![search.png] {Explore (20m)|Beach|20|BeachExplore}\n\n![beach.png] {Shoreline Street (2m)|ShorelineStreet|2}"
+        return "You are on the beach. The waves crash against the shore rhythmically, leaving trails of foam on the sand.\n\n![search.png] {Explore (20m)|Beach|20|BeachExplore}\n![fish.png] {Fishing Shop (3m)|FishingShop|3}\n![fish.png] {Dock (1m)|Docks|1}\n\n![beach.png] {Shoreline Street (2m)|ShorelineStreet|2}"
+    }
+
+    static FishingShop() {
+        return "You are inside a small fishing shop. The walls are filed with various fishing rods and bait.\n\n![dollar.png] {Sell Fish (5m)|FishingShop|5|SellFish}\n![fishing_rod.png] {Fishing rods|FishingShopRod|0}\n\n![leave.png] {Leave (3m)|Beach|1}"
+    }
+    
+    static FishingShopRod() {
+        let r = "A variety of fishing rods are displayed on the shelves.\n\n"
+        for (const [rod, data] of Object.entries(RODS)) {
+            if (!Owned[rod]) {
+                r += `{${data['Name']} $${data['Price']}|FishingShopRod|1|FishingShopBuyRod(${rod})}\n`
+            } else {
+                r += ColorGen(TEXT_COLORS['unavailable'], data['Name'] + " owned") + "\n"
+            }
+        }
+        r += "\n{Back|FishingShop|0}"
+        return r
+    }
+
+    static Docks() {
+        return `You are standing on a wooden dock. You can hear seagulls cry overhead.\n\n![fishing_rod.png] {Choose Rod|DocksChooseRod|0}\n${EquippedRod != null ? `Currently equipped: ${RODS[EquippedRod]['Name']}\n\n![fishing_rod.png] {Fish (30m)|Docks|30|DocksFish}\n\n` : ""}![leave.png] {Leave (1m)|Beach|1}`
+    }
+
+    static DocksChooseRod() {
+        let r = ""
+        for (const [rod, data] of Object.entries(RODS)) {
+            if (Owned[rod]) {
+                r += `{${data['Name']}|Docks|1|DocksChooseRod(${rod})}\n`
+            }
+        }
+
+        if (r == "") {
+            r = "You have no rods available.\n"
+        }
+        r += "\n{Back|Docks|0}"
+        return r
     }
     
     static MapleStreet() {
@@ -224,13 +292,83 @@ class Scenes {
     }
     
     static SchoolHallway() {
-        return "You are inside the school hallways.\n\n![leave.png] {Leave (1m)|SchoolYard|1}"
+        return `You are inside the school hallways. You have ${GetNextClass()} next.\n\n{View Timetable|SchoolTimetable|0}\n\n{Science Classroom (2m)|SchoolScienceClassroom|2}\n{English Classroom (2m)|SchoolEnglishClassroom|2}\n{Math Classroom (2m)|SchoolMathClassroom|2}\n{Business Classroom (2m)|SchoolBusinessClassroom|2}\n{History Classroom (2m)|SchoolHistoryClassroom|2}\n{Physical Education Classroom (2m)|SchoolPEClassroom|2}\n\n![leave.png] {Leave (1m)|SchoolYard|1}`
+    }
+
+    static SchoolScienceClassroom() {
+        if (Time < 585 && Time > 535) {
+            if (Time > 550) {
+                TopText = "You're late for class.\n\n"
+            }
+            return "You are in the science classroom. It has slightly damaged lab equipment and walls filled with posters illustrating scientific concepts." + SchoolClassroomOptionsGen("Science")
+        } else {
+            return "The door for the science classroom is locked.\n\n{Back|SchoolHallway|0}"
+        }
+    }
+
+    static SchoolEnglishClassroom() {
+        if (Time < 630 && Time > 585) {
+            if (Time > 600) {
+                TopText = "You're late for class.\n\n"
+            }
+            return "You are in the english classroom. Every table in this classroom contains a reading lamp." + SchoolClassroomOptionsGen("English")
+        } else {
+            return "The door for the english classroom is locked.\n\n{Back|SchoolHallway|0}"
+        }
+    }
+    
+    static SchoolMathClassroom() {
+        if (Time < 710 && Time > 665) {
+            if (Time > 680) {
+                TopText = "You're late for class.\n\n"
+            }
+            return "You are in the math classroom. There's a large whiteboard in the front of the room filled with complex equations." + SchoolClassroomOptionsGen("Math")
+        } else {
+            return "The door for the math classroom is locked.\n\n{Back|SchoolHallway|0}"
+        }
+    }
+    
+    static SchoolBusinessClassroom() {
+        if (Time < 760 && Time > 715) {
+            if (Time > 730) {
+                TopText = "You're late for class.\n\n"
+            }
+            return "You are in the business classroom. There's multiple graphs on the wall that provides examples of a market." + SchoolClassroomOptionsGen("Business")
+        } else {
+            return "The door for the business classroom is locked.\n\n{Back|SchoolHallway|0}"
+        }
+    }
+    
+    static SchoolHistoryClassroom() {
+        if (Time < 840 && Time > 795) {
+            if (Time > 810) {
+                TopText = "You're late for class.\n\n"
+            }
+            return "You are in the history classroom. It contains multiple maps and timelines of important events in history." + SchoolClassroomOptionsGen("History")
+        } else {
+            return "The door for the history classroom is locked.\n\n{Back|SchoolHallway|0}"
+        }
+    }
+    
+    static SchoolPEClassroom() {
+        if (Time < 890 && Time > 845) {
+            if (Time > 860) {
+                TopText = "You're late for class.\n\n"
+            }
+            return "You are in the physical education classroom. It's slightly bigger than the other classrooms as extra space is needed for the training equipment." + SchoolClassroomOptionsGen("PE")
+        } else {
+            return "The door for the physical education classroom is locked.\n\n{Back|SchoolHallway|0}"
+        }
+    }
+
+    static SchoolTimetable() {
+        return "Science 9:00 - 9:45\nEnglish 9:50 - 10:35\nRecess 10:35 - 11:05\nMath 11:05 - 11:55\nBusiness 11:55 - 12:45\nLunch 12:45 - 13:15\nHistory 13:15 - 14:05\nPhysical Education 14:05 - 14:55\n{Back|SchoolHallway|0}"
     }
     
     static SchoolCanteen() {
         let r = "You are in the canteen. Students sit at tables eating and talking."
         r += (Time >= 765 && Time <= 795) ? "\n\n![burger.png] {Order lunch (5m)|Canteen|5|CanteenOrderLunch}" : ""
-        r += "\n\n![rest.png] {Rest (15m)|Canteen|15|CanteenRest}" 
+        r += "\n\n![table.png] {Rest (15m)|SchoolCanteen|15|CanteenRest}" 
         r += "\n\n![leave.png] {Leave (1m)|SchoolYard|1}"
         return r
     }    
@@ -267,19 +405,21 @@ class SceneFunctions {
     
     static ConvenienceStoreBuy(item) {
         if (item == "EnergyDrink") {
-            if (Money >= 10) {
-                ChangeStat("Health", -20)
-                ChangeMoney(-10)
-                if (Cooldowns['EnergyDrink'] <= TotalTime || !Cooldowns['EnergyDrink']) {
-                    Cooldowns['EnergyDrink'] = TotalTime + 2400
-                    ChangeStat("Fatigue", -30)
-                    TopText = "You bought an energy drink for " + ColorGen(TEXT_COLORS['money'], "$10") + "\n" + ColorGen(TEXT_COLORS['good'], " -30 Fatigue\n") + ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")
-                } else {
-                    TopText = "You bought an energy drink for " + ColorGen(TEXT_COLORS['money'], "$10") + ColorGen("757b94", " it's not effective.\n") + ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")
-                }
-            } else {
+            if (Money < 10) {
                 TopText = "You don't have enough money to purchase this item.\n\n"
+                return
             }
+            ChangeMoney(-10)
+    
+            if (Cooldowns['EnergyDrink'] <= TotalTime || !Cooldowns['EnergyDrink']) {
+                Cooldowns['EnergyDrink'] = TotalTime + 2400
+                ChangeStat("Fatigue", -30)
+                TopText = `You bought an energy drink for ${ColorGen(TEXT_COLORS['money'], "$10")}\n${ColorGen(TEXT_COLORS['good'], "-30 Fatigue")}\n${ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")}`
+            } else {
+                TopText = `You bought an energy drink for ${ColorGen(TEXT_COLORS['money'], "$10")}\n${ColorGen("757b94", "it's not effective.")}\n${ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")}`
+            }
+
+            ChangeStat("Health", -20)
         }
     }
     
@@ -366,7 +506,80 @@ class SceneFunctions {
             TopText = `You found nothing.\n${ColorGen(TEXT_COLORS['bad'], "+10 Fatigue")}\n${ColorGen(TEXT_COLORS['xp'], "+5 Foraging XP")}\n\n`
         }
     }
+
+    static ClassManager(args) {
+        let [Subject, Type] = args
     
+        if (SUBJECT_STATS[Subject]) {
+            const {xp, fatigue, time} = SUBJECT_STATS[Subject]
+            if (Subject == "PE") {
+                Subject = "Fitness"
+            }
+            let XpGain = Type == "Study" ? xp : 2
+            let FatigueGain = Type == "Study" ? fatigue : 3
+            ChangeXp(Subject, XpGain)
+            ChangeStat("Fatigue", FatigueGain)
+            ChangeTime(time - Time)
+            TopText = `You ${Type == "Study" ? "carefully listened to all the instructions" : "ignored all the instructions"} your teacher gave you. After 45 minutes the bell rang and you left the classroom.\n${ColorGen(TEXT_COLORS['bad'], `+${FatigueGain} Fatigue`)}\n${ColorGen(TEXT_COLORS['xp'], `+${XpGain} ${Subject} XP`)}\n\n`
+        }
+    } 
+    
+    static CanteenRest() {
+        ChangeStat("Fatigue", -2)
+        TopText = `You rest on one of the benches.\n${ColorGen(TEXT_COLORS['good'], "-2 Fatigue")}\n\n`
+    }
+
+    static FishingShopBuyRod(rod) {
+        if (Money >= RODS[rod]['Price']) {
+            ChangeMoney(RODS[rod]['Price'] * -1)
+            Owned[rod] = true
+            TopText = `You bought a ${RODS[rod]['Name']} for $${RODS[rod]['Price']}\n\n`
+        } else {
+            TopText = "You don't have enough money to purchase this item.\n\n"
+        }
+    }
+
+    static SellFish() {
+        TopText = ""
+        let tempMoney = 0
+        for (const data of FISH) {
+            if (data['Name'] in Inventory) {
+                TopText += `${Inventory[data['Name']]}x ${data['Name']}: ${ColorGen(TEXT_COLORS['money'], "$" + Inventory[data['Name']] * data['Price'])}\n`
+                ChangeMoney(Inventory[data['Name']] * data['Price'])
+                tempMoney += Inventory[data['Name']] * data['Price']
+                ChangeInventory(data['Name'], Inventory[data['Name']] * -1)
+            }
+        }
+
+        if (tempMoney != 0) {
+            TopText += `Total: ${ColorGen(TEXT_COLORS['money'], "$" + tempMoney)}\n\n`
+        } else {
+            TopText = "You have no fish to sell.\n\n"
+        }
+    }
+
+    static DocksFish() {
+        let fish = FishGen(1, RandomNumber(RODS[EquippedRod]['FishMin'], RODS[EquippedRod]['FishMax']))
+        let CountMap = {}
+
+        for (fish of fish) {
+            CountMap[fish] = (CountMap[fish] || 0) + 1
+        }
+
+        for (const [key, value] of Object.entries(CountMap)) {
+            ChangeInventory(key, value)
+        }
+
+        const result = Object.entries(CountMap).map(([key, value]) => `${value}x ${key}`).join(", ")
+
+        ChangeStat("Fatigue", 15)
+        TopText = `You caught: ${result}\n${ColorGen(TEXT_COLORS['bad'], "+15 Fatigue")}\n\n`        
+    }
+
+    static DocksChooseRod(rod) {
+        EquippedRod = rod
+        TopText = `You equipped your ${RODS[rod]['Name']}\n\n`
+    }
 }
 
 // Text loaders
@@ -540,7 +753,7 @@ function ChangeStat(stat, amount) {
             LinkSceneOverride = true
             SetStat("Health", 30)
             SetStat("Fatigue", 90)
-            TopText = "You pass out due to being too tired.\n\n{Next (3h)|HospitalUnconscious|180}"
+            TopText += "You pass out due to being too tired.\n\n{Next (3h)|HospitalUnconscious|180}"
             SceneManager("Blank")
         } else {
             document.getElementById("SidebarHealth").style.color = "White"
@@ -610,6 +823,52 @@ function ChangeCount(val, increment) {
     }
 }
 
+function GetNextClass() {
+    if (Time < 585) {
+        return "Science"
+    } else if (Time < 635) {
+        return "English"
+    } else if (Time < 715) {
+        return "Math"
+    } else if (Time < 765) {
+        return "Business"
+    } else if (Time < 845) {
+        return "History"
+    } else if (Time < 895) {
+        return "Physical Education"
+    } else {
+        return "Nothing"
+    }
+}
+
+function SchoolClassroomOptionsGen(classroom) {
+    return `\n\nWhat would you like to do?\n\n{Study|SchoolHallway|0|ClassManager(${classroom},Study)}\n{Daydream|SchoolHallway|0|ClassManager(${classroom},Daydream)}`
+}
+
+function FishGen(Luck, count) {
+    const ModifiedFishTypes = FISH.map(fish => ({
+        ...fish,
+        "Chance": Math.min(fish['Chance'] * Luck, 1)
+    }))
+
+    const GeneratedFish = []
+
+    for (let i = 0; i < count; i++) {
+        const random = Math.random() * ModifiedFishTypes.reduce((acc, fish) => acc + fish['Chance'], 0)
+        
+        let CumulativeChance = 0
+        
+        for (let fish of ModifiedFishTypes) {
+            CumulativeChance += fish['Chance']
+            if (random <= CumulativeChance) {
+                GeneratedFish.push(fish['Name'])
+                break
+            }
+        }
+    }
+    return GeneratedFish
+}
+
 // Buttons
 
 document.getElementById("SidebarToggle").addEventListener("click", function() {
@@ -673,7 +932,7 @@ document.getElementById("SceneJumpInput").addEventListener("input", function () 
     if (query) {
         const filteredData = allScenes.filter(item => item.toLowerCase().includes(query))
         
-        filteredData.forEach(item => {
+        filteredData.forEach(function(item) {
             const suggestion = document.createElement('div')
             suggestion.className = "Suggestion"
             suggestion.textContent = item
