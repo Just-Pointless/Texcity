@@ -1,0 +1,9 @@
+v0.2.0
+- Added bait for fishing
+- Fishing gives xp
+- Fix typo
+- Add experimental saving and loading (game has so little content rn it probably doesn't even matter yet)
+- Add office job
+
+v0.1.0
+- Release
