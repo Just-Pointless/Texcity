@@ -28,6 +28,7 @@ var DebtDue = 0
 var Counts = {}
 var Owned = {}
 var EquippedRod = null
+var EquippedBait = null
 
 var ForcedRng = -1
 
@@ -92,6 +93,11 @@ const FISH = [
     {"Name": "Tuna", "Chance": 0.01, "Price": 20},
     {"Name": "Shark", "Chance": 0.005, "Price": 30}
 ]
+const BAIT = {
+    "Bread": {"Name": "Bread", "Luck": 1, "Price": 3},
+    "Worms": {"Name": "Worms", "Luck": 1.3, "Price": 5},
+    "Fish": {"Name": "Fish", "Luck": 1.5, "Price": 8}
+}
 
 // Scenes
 class Scenes {
@@ -163,12 +169,65 @@ class Scenes {
     }
     
     static Office() {
-        let r = "You are inside a corporate office building. The front desk receptionist barely looks up as people hurry past.\n\n"
-        r += Jobs['Office'] ? "" : "![chat.png] {Ask for work (2m)|OfficeWorkIntro1|2}\n\n"
-        r += "![leave.png] {Leave (1m)|CrestwoodStreet|1}"
+        let r = "You are inside a corporate office building. The front desk receptionist barely looks up as people hurry past.\n"
+        r += Time <= 570 && Time >= 510 && Jobs['Office'] == true && WeekDay < 6 ? "\n{Work (8h)|OfficeWorkEntry|0}" : 
+             Jobs['Office'] == true ? ColorGen(TEXT_COLORS['requirement'], "\nYou can only start work between 8:30 and 9:30 on weekdays.") : ""
+        r += "\n![chat.png] {Receptionist (2m)|OfficeReceptionist|2}\n\n![leave.png] {Leave (1m)|CrestwoodStreet|1}"
+        return r
+    }
+
+    static OfficeReceptionist() {
+        let r = `"Good ${GetTimeName(true)}, how may I assist you today?"\n\n`
+        if (!Jobs["Office"]) {
+            r += "![chat.png] {Inquire about work (1m)|OfficeWO1|1}"
+        }
+        r += "\n\n![leave.png] {Leave|Office|1}"
         return r
     }
     
+    static OfficeWO1() {
+        return "The receptionist gives you a few simple tasks to complete to test your ability.\n\n{Next (20m)|OfficeWO2|20}"
+    }
+    
+    static OfficeWO2() {
+        if (Skills['Communication'] < 4 && Skills['Math'] < 2) {
+            return `You were unable to complete the tasks she provided.\n\n${ColorGen(TEXT_COLORS['important'], "Requires: Communication 4 and Math 2")}\n\n{Leave (1m)|Office|1}`
+        }
+        Jobs["Office"] = true
+        return "Upon completion she gives you some information about your job. \"You will be sorting files for our company. Note that you can only begin working at 8:30 to 9:30 on weekdays.\"\n\n{Next (1m)|Office|1}"
+    }
+    
+    static OfficeWorkEntry() {
+        let r = "Since your desk is on the 3rd floor, you take the staircase to get there as it's more efficient.\n"
+        r += OfficePromotionXP >= OFFICE_RANKS[OfficeRank]['Promotion'] ? "\n{Request Promotion|OfficePromotion|0}\n" : ""
+        r += "\n{Next|Blank|0|OfficeWorkManager(1)}"
+        return r
+    }
+
+    static OfficeWorkEnd() {
+        OfficePromotionXP += 8
+        ChangeMoney(8 * OFFICE_RANKS[OfficeRank]['Pay'])
+        if (OFFICE_RANKS[OfficeRank]['Promotion'] <= OfficePromotionXP) {
+            EndText = "\n\nYou can request a promotion the next time you work if you have the required skills."
+        }
+        return `You finish your 8 hour shift and head down to the first floor. It is extremely crowded with hundreds of employees leaving the building. You were paid ${ColorGen(TEXT_COLORS['money'], "$" + 8 * OFFICE_RANKS[OfficeRank]['Pay'])} upon leaving the building.\n\n${InfoText("Office")}\n\n{Next|CrestwoodStreet|0}`
+    }
+
+    static OfficePromotion() {
+        if (SkillCheck(OFFICE_RANKS[OfficeRank + 1]['Skills']).length == 0) {
+            OfficePromotionXP = 0
+            OfficeRank += 1
+            return `You head towards a futuristic looking device that tracks your hours worked and your performance. You have automatically been promoted to: "${OFFICE_RANKS[OfficeRank]['Title']}". You can begin working now.\n\n{Next|Blank|0|OfficeWorkManager(1)}`
+        } else {
+            var SkillsRequired = SkillCheck(OFFICE_RANKS[OfficeRank + 1]['Skills'])
+            var RequiredString = ""
+            SkillsRequired.forEach(function(value) {
+                RequiredString += `\n - ${value} ${OFFICE_RANKS[OfficeRank + 1]['Skills'][value]}`
+            })
+            return `You head towards a futuristic looking device that tracks your hours worked and your performance. You do not have the skills required to be promoted.\n\nRequired: ${RequiredString}\n\n{Next|Blank|0|OfficeWorkManager(1)}`
+        }
+    }
+
     static FastFood() {
         let r = "You are inside a fast food restaurant. "
         r += Time < 420 ? "It's late, and only a few customers linger under the dim lights." :
@@ -205,7 +264,7 @@ class Scenes {
     }
 
     static FishingShop() {
-        return "You are inside a small fishing shop. The walls are filed with various fishing rods and bait.\n\n![dollar.png] {Sell Fish (5m)|FishingShop|5|SellFish}\n![fishing_rod.png] {Fishing rods|FishingShopRod|0}\n\n![leave.png] {Leave (3m)|Beach|1}"
+        return "You are inside a small fishing shop. The walls are filled with various fishing rods and bait.\n\n![dollar.png] {Sell Fish (5m)|FishingShop|5|SellFish}\n![fishing_rod.png] {Fishing rods|FishingShopRod|0}\n![fish.png] {Bait|FishingShopBait|0}\n\n![leave.png] {Leave (3m)|Beach|1}"
     }
     
     static FishingShopRod() {
@@ -221,8 +280,17 @@ class Scenes {
         return r
     }
 
+    static FishingShopBait() {
+        let r = "Different types of bait are stored in boxes.\n\n"
+        for (const [bait, data] of Object.entries(BAIT)) {
+            r += `{${data['Name']} $${data['Price']}|Blank|1|FishingShopBaitSelection(${bait})}\n`
+        }
+        r += "\n{Back|FishingShop|0}"
+        return r
+    }
+
     static Docks() {
-        return `You are standing on a wooden dock. You can hear seagulls cry overhead.\n\n![fishing_rod.png] {Choose Rod|DocksChooseRod|0}\n${EquippedRod != null ? `Currently equipped: ${RODS[EquippedRod]['Name']}\n\n![fishing_rod.png] {Fish (30m)|Docks|30|DocksFish}\n\n` : ""}![leave.png] {Leave (1m)|Beach|1}`
+        return `You are standing on a wooden dock. You can hear seagulls cry overhead.\n\n${EquippedBait != null ? `Bait: ${BAIT[EquippedBait]['Name']} (${Owned[EquippedBait]})\n` : ""}${EquippedRod != null ? `Rod: ${RODS[EquippedRod]['Name']}\n\n![fishing_rod.png] {Fish (30m)|Docks|30|DocksFish}\n` : ""}![fishing_rod.png] {Choose Rod|DocksChooseRod|0}\n![fish.png] {Choose Bait|DocksChooseBait|0}\n\n![leave.png] {Leave (1m)|Beach|1}`
     }
 
     static DocksChooseRod() {
@@ -235,6 +303,21 @@ class Scenes {
 
         if (r == "") {
             r = "You have no rods available.\n"
+        }
+        r += "\n{Back|Docks|0}"
+        return r
+    }
+
+    static DocksChooseBait() {
+        let r = ""
+        for (const [bait, data] of Object.entries(BAIT)) {
+            if (Owned[bait]) {
+                r += `{${data['Name']}|Docks|1|DocksChooseBait(${bait})}\n`
+            }
+        }
+
+        if (r == "") {
+            r = "You have no bait available.\n"
         }
         r += "\n{Back|Docks|0}"
         return r
@@ -416,7 +499,7 @@ class SceneFunctions {
                 ChangeStat("Fatigue", -30)
                 TopText = `You bought an energy drink for ${ColorGen(TEXT_COLORS['money'], "$10")}\n${ColorGen(TEXT_COLORS['good'], "-30 Fatigue")}\n${ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")}`
             } else {
-                TopText = `You bought an energy drink for ${ColorGen(TEXT_COLORS['money'], "$10")}\n${ColorGen("757b94", "it's not effective.")}\n${ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")}`
+                TopText = `You bought an energy drink for ${ColorGen(TEXT_COLORS['money'], "$10")}\n${ColorGen(TEXT_COLORS['unavailable'], "it's not effective.")}\n${ColorGen(TEXT_COLORS['bad'], "-20 Health\n\n")}`
             }
 
             ChangeStat("Health", -20)
@@ -559,7 +642,11 @@ class SceneFunctions {
     }
 
     static DocksFish() {
-        let fish = FishGen(1, RandomNumber(RODS[EquippedRod]['FishMin'], RODS[EquippedRod]['FishMax']))
+        if (EquippedBait == null || Owned[EquippedBait] == 0) {
+            TopText = `${ColorGen(TEXT_COLORS['bad'], "You were unable to catch any fish as you have no bait")}\n\n`
+            return
+        }
+        let fish = FishGen(BAIT[EquippedBait]['Luck'], RandomNumber(RODS[EquippedRod]['FishMin'], RODS[EquippedRod]['FishMax']))
         let CountMap = {}
 
         for (fish of fish) {
@@ -572,14 +659,67 @@ class SceneFunctions {
 
         const result = Object.entries(CountMap).map(([key, value]) => `${value}x ${key}`).join(", ")
 
-        ChangeStat("Fatigue", 15)
-        TopText = `You caught: ${result}\n${ColorGen(TEXT_COLORS['bad'], "+15 Fatigue")}\n\n`        
+        ChangeStat("Fatigue", 20)
+        ChangeXp("Fishing", 5)
+        Owned[EquippedBait] -= 1
+        TopText = `You caught: ${result}\n${ColorGen(TEXT_COLORS['bad'], "+20 Fatigue")}\n${ColorGen(TEXT_COLORS['xp'], "+5 Fishing Xp")}\n\n`        
     }
 
     static DocksChooseRod(rod) {
         EquippedRod = rod
         TopText = `You equipped your ${RODS[rod]['Name']}\n\n`
     }
+
+    static DocksChooseBait(bait) {
+        EquippedBait = bait
+        TopText = `You equipped your ${BAIT[bait]['Name']}\n\n`
+    }
+
+    static FishingShopBaitSelection(bait) {
+        TopText = `How much ${bait} would you like to buy? Each one costs $${BAIT[bait]['Price']}\n\n{1|FishingShop|0|FishingShopBuyBait(${bait},1)}\n{5|FishingShop|0|FishingShopBuyBait(${bait},5)}\n{10|FishingShop|0|FishingShopBuyBait(${bait},10)}\n{20|FishingShop|0|FishingShopBuyBait(${bait},20)}\n\n{Back|FishingShopBait|0}`
+    }
+
+    static FishingShopBuyBait(args) {
+        let [bait, amount] = args
+        if (Money >= BAIT[bait]['Price'] * amount) {
+            ChangeMoney(BAIT[bait]['Price'] * amount * -1)
+            if (Owned[bait]) {
+                Owned[bait] += Number(amount)
+            } else {
+                Owned[bait] = Number(amount)
+            }
+            TopText = `You bought ${amount}x ${BAIT[bait]['Name']} for $${BAIT[bait]['Price'] * amount}\n\n`
+        } else {
+            TopText = "You don't have enough money to purchase this.\n\n"
+        }
+    }
+
+    static OfficeWorkManager(hour) {
+        hour = Number(hour)
+        let rng = GetRng()
+        TopText = `It is currently the ${NumberSuffix(hour)} hour of your day shift.\n`
+    
+        if (hour < 8) {
+            if (rng < 100) {
+                ChangeStat("Fatigue", 12)
+                TopText += `${ColorGen("d90202", "+12 Fatigue")}\n\nYou had to deliver documents to your manager.`
+            } else if (rng < 150) {
+                ChangeStat("Fatigue", 3)
+                TopText += `${ColorGen("d90202", "+3 Fatigue")}\n\nYou got a short break during your shift.`
+            } else if (rng < 250) {
+                ChangeStat("Fatigue", 10)
+                TopText += `${ColorGen("d90202", "+10 Fatigue")}\n\nYou had to attend an informational meeting for the entire hour.`
+            } else {
+                ChangeStat("Fatigue", 9)
+                TopText += `${ColorGen("d90202", "+9 Fatigue")}\n\nNothing interesting happened.`
+            }
+            TopText += `\n\n{Next|Blank|60|OfficeWorkManager(${hour + 1})}`
+        } else if (hour == 8) {
+            ChangeStat("Fatigue", 9)
+            TopText = `It is the last hour of your day shift. You can leave after this.\n${ColorGen("d90202", "+9 Fatigue")}\n\nNothing interesting happened.\n\n{Next|OfficeWorkEnd|60}`
+        }
+    }
+    
 }
 
 // Text loaders
@@ -848,7 +988,7 @@ function SchoolClassroomOptionsGen(classroom) {
 function FishGen(Luck, count) {
     const ModifiedFishTypes = FISH.map(fish => ({
         ...fish,
-        "Chance": Math.min(fish['Chance'] * Luck, 1)
+        "Chance": Math.min(fish['Chance'] * Luck, 0.5)
     }))
 
     const GeneratedFish = []
@@ -867,6 +1007,37 @@ function FishGen(Luck, count) {
         }
     }
     return GeneratedFish
+}
+
+function InfoText(InfoType) {
+    if (InfoType == "Office") {
+        let CurRank = OFFICE_RANKS[OfficeRank]
+        return `Job Stats:\n - Title: ${CurRank['Title']}\n - Pay Per Hour: ${ColorGen(TEXT_COLORS['money'], "$" + CurRank["Pay"])}\n - Promotion: ${OfficePromotionXP}/${CurRank['Promotion']}`
+    }
+}
+
+function NumberSuffix(num) {
+    let j = num % 10, k = num % 100;
+    if (j === 1 && k !== 11) {
+        return num + "st"
+    }
+    if (j === 2 && k !== 12) {
+        return num + "nd"
+    }
+    if (j === 3 && k !== 13) {
+        return num + "rd"
+    }
+    return num + "th"
+}
+
+function SkillCheck(SkillDict) {
+    var Missing = []
+    for (var key of Object.keys(SkillDict)) {
+        if (Skills[key] < SkillDict[key]) {
+            Missing.push(key)
+        }
+    }
+    return Missing
 }
 
 // Buttons
@@ -1002,8 +1173,6 @@ document.getElementById("SetRng").addEventListener("click", function() {
     ForcedRng = Number(document.getElementById("ForceRng").value)
 })
 
-SceneManager("Menu")
-
 function FormatTime(si) {
     const seconds = Math.floor(Math.abs(si))
     const h = Math.floor(seconds / 3600)
@@ -1019,3 +1188,85 @@ setInterval(function() {
     Playtime += 1
     document.getElementById("STAT_Playtime").textContent = "Play Time: " + FormatTime(Playtime)
 }, 1000)
+
+// Saving
+
+function EncodeSave() {
+    let gameState = {
+        Money, Time, Day, WeekDay, TotalTime, OldScene, CurrentScene, Playtime, TopText, EndText,
+        LinkSceneOverride, Stats, Checks, Jobs, OfficeRank, OfficePromotionXP, Skills, SkillXp, Cooldowns, Inventory,
+        Debt, DebtDue, Counts, Owned, EquippedRod, EquippedBait
+    }
+
+    if (OfficeRank == 0 && OfficePromotionXP == 0) {
+        delete gameState['OfficeRank']
+        delete gameState['OfficePromotionXP']
+    }
+    if (Object.keys(Checks).length == 0) {delete gameState['Checks']}
+    if (Object.keys(Cooldowns).length == 0) {delete gameState['Cooldowns']}
+    if (Object.keys(Counts).length == 0) {delete gameState['Counts']}
+    if (TopText == "") {delete gameState['TopText']}
+    if (EndText == "") {delete gameState['EndText']}
+    if (EquippedRod == null) {delete gameState['EquippedRod']}
+    if (EquippedBait == null) {delete gameState['EquippedBait']}
+    if (Object.keys(Owned).length == 0) {delete gameState['Owned']}
+    if (LinkSceneOverride == false) {delete gameState['LinkSceneOverride']}
+    if (Object.keys(Jobs).length == 0) {delete gameState['Jobs']}
+    if (Object.keys(Inventory).length == 0) {delete gameState['Inventory']}
+
+    for (const [skill, val] of Object.entries(Skills)) {
+        if (val == 0) {
+            delete gameState['Skills'][skill]
+        }
+    }
+
+    for (const [skill, val] of Object.entries(SkillXp)) {
+        if (val == 0) {
+            delete gameState['SkillXp'][skill]
+        }
+    }
+    if (Object.keys(gameState['Skills']).length == 0) {delete gameState['Skills']}
+    if (Object.keys(gameState['SkillXp']).length == 0) {delete gameState['SkillXp']}
+
+    return LZString.compressToBase64(JSON.stringify(gameState))
+}
+
+function DecodeSave(EncodedState) {
+    return JSON.parse(LZString.decompressFromBase64(EncodedState))
+}
+
+function LoadSave(save) {
+    let decoded = DecodeSave(save);
+
+    ({
+        Money,
+        Time,
+        Day,
+        WeekDay,
+        TotalTime,
+        OldScene,
+        CurrentScene,
+        Playtime,
+        TopText = "",
+        EndText = "",
+        LinkSceneOverride = "",
+        Stats,
+        Checks = {},
+        Jobs = {},
+        OfficeRank = 0,
+        OfficePromotionXP = 0,
+        Skills,
+        SkillXp,
+        Cooldowns = {},
+        Inventory = {},
+        Debt,
+        DebtDue,
+        Counts = Counts,
+        Owned = Owned,
+        EquippedRod = null,
+        EquippedBait = null
+    } = decoded)
+    SceneManager(CurrentScene)
+}
+
+SceneManager("Menu")
