@@ -1,3 +1,14 @@
+v0.3.0
+- Fixed version number
+- Added market street
+- Added berry selling
+- Added high street and odd jobs
+- Added crystal caves
+- Fixed saving on some scene functions
+- Fixed classes
+- Fixed ui update on loading
+- Added ordering lunch in canteen
+
 v0.2.0
 - Added bait for fishing
 - Fishing gives xp
