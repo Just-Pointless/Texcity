@@ -1,4 +1,6 @@
-const VERSION = "0.1.0"
+// Yes all the code is written in whatever_iWantto-case
+
+const VERSION = "0.3.0"
 document.getElementById("GameTitle").textContent = `Texcity v${VERSION}`
 
 // Variables
@@ -29,6 +31,9 @@ var Counts = {}
 var Owned = {}
 var EquippedRod = null
 var EquippedBait = null
+var HighStreetJobs = []
+var HighStreetJobReset = true
+var SceneFunctionRerun = {}
 
 var ForcedRng = -1
 
@@ -98,7 +103,25 @@ const BAIT = {
     "Worms": {"Name": "Worms", "Luck": 1.3, "Price": 5},
     "Fish": {"Name": "Fish", "Luck": 1.5, "Price": 8}
 }
-
+const MARKET_STREET_SELLABLES = {
+    "Berry": ["RedBerry", "BlueBerry", "GreenBerry"]
+}
+const MARKET_STREET_SELL_PRICES = {
+    "RedBerry": 1,
+    "BlueBerry": 2,
+    "GreenBerry": 2
+}
+const MARKET_STREET_CONVERSIONS = {
+    "Berry": "MarketStreetBerryBuyer"
+}
+const HIGH_STREET_JOB_INFO = {
+    "Cleaner": {"Time": 1, "Pay": 10, "StatEffects": {"Fatigue": 10}},
+    "Cashier": {"Time": 2, "Pay": 20, "StatEffects": {"Fatigue": 10}},
+    "Flyer Distributor": {"Time": 1, "Pay": 15, "StatEffects": {"Fatigue": 12}, "Req": {"Business": 1}},
+    "Gardener": {"Time": 1, "Pay": 10, "StatEffects": {"Fatigue": 15}}
+}
+const HIGH_STREET_JOB_INFO_KEYS = Object.keys(HIGH_STREET_JOB_INFO)
+const CRYSTAL_CAVES_LOCATIONS = {"2,2": "![dollar.png] {Shop|CrystalCavesShop|0}", "3,3": "![leave.png] {Exit (10m)|CrystalCavesExit|10}"}
 // Scenes
 class Scenes {
     static Menu() {
@@ -126,7 +149,7 @@ class Scenes {
             return "You are in the hall of your apartment block. One of the lights is constantly flickering and some of the paint on the walls has peeled off.\n\n![wood_door.png] {Your apartment (1m)|Home|1}\n\n![leave.png] {Go outside (1m)|MeadowbrookStreet|1}"
         } else {
             Checks['BankerIntro'] = true
-            return "As you step out of your apartment a skinny man with a black bowler hat approaches you.\n\n\"Greetings, we've met before. I'm here to remind you about your outstanding balance of $10000, with a payment of $100 due this week. If you've forgotten, our bank is at " + ColorGen(TEXT_COLORS['important'], "Crestwood Street") + ". You can visit at any time to inquire about the remaining amount you owe.\"\n\n{Next|ApartmentHall|0}"
+            return "As you step out of your apartment a skinny man with a black bowler hat approaches you.\n\n\"Greetings, we've met before. I'm here to remind you about your outstanding balance of $10000, with a payment of $100 due next week. If you've forgotten, our bank is at " + ColorGen(TEXT_COLORS['important'], "Crestwood Street") + ". You can visit at any time to inquire about the remaining amount you owe.\"\n\n{Next|ApartmentHall|0}"
         }
     }
     
@@ -136,7 +159,7 @@ class Scenes {
     
     static ConvenienceStore() {
         let r = "You are inside a small convenience store. Shelves are stocked with snacks and drinks."
-        r += Jobs['ConvenienceStore'] ? "\n\n{Work (1h)|ConvenienceStore|60|ConvenienceStoreWork}" : "\n\n![chat.png] {Ask for work (5m)|ConvenienceStoreWorkIntro1|5}"
+        r += Jobs['ConvenienceStore'] ? "\n\n![clock.png] {Work (1h)|ConvenienceStore|60|ConvenienceStoreWork}" : "\n\n![chat.png] {Ask for work (5m)|ConvenienceStoreWorkIntro1|5}"
         r += "\n\n![energy_drink.png] {Energy Drink ($10)|ConvenienceStore|1|ConvenienceStoreBuy(EnergyDrink)}\n\n![leave.png] {Leave (1m)|MeadowbrookStreet|1}"
         return r
     }
@@ -147,7 +170,7 @@ class Scenes {
     
     static ConvenienceStoreWorkIntro2() {
         Jobs['ConvenienceStore'] = true
-        return "You listen carefully as he explains what to do.\n{Next|ConvenienceStore|0}"
+        return "You listen carefully as he explains what to do.\n\n{Next|ConvenienceStore|0}"
     }
 
     static CrestwoodStreet() {
@@ -256,7 +279,7 @@ class Scenes {
 
     
     static ShorelineStreet() {
-        return "You are on Shoreline Street. It runs parallel to the coast. The sound of waves crashing can be heard in the distance.\n\n![beach.png] {Beach (2m)|Beach|2}\n\n![maple.png] {Maple Street (5m)|MapleStreet|5}\n![crestwood.png] {Crestwood Street (5m)|CrestwoodStreet|5}"
+        return "You are on Shoreline Street. It runs parallel to the coast. The sound of waves crashing can be heard in the distance.\n\n![beach.png] {Beach (2m)|Beach|2}\n\n![maple.png] {Maple Street (5m)|MapleStreet|5}\n![dollar.png] {Market Street (5m)|MarketStreet|5}\n![crestwood.png] {Crestwood Street (5m)|CrestwoodStreet|5}"
     }
 
     static Beach() {
@@ -323,6 +346,22 @@ class Scenes {
         return r
     }
     
+    static MarketStreet() {
+        return "You are on Market Street. You can sell items in your inventory here.\n\n![berry.png] {Berry Buyer (2m)|MarketStreetBerryBuyer|2}\n\n![beach.png] {Shoreline Street (5m)|ShorelineStreet|5}\n![clock.png] {High Street (5m)|HighStreet|5}"
+    }
+
+    static MarketStreetBerryBuyer() {
+        return `You head towards a stall that specialises in buying berries.\n${MarketStallLoader("Berry")}`
+    }
+    
+    static HighStreet() {
+        return "You are on High Street. You can find odd jobs here that usually take an hour or two to complete.\n\n![poster.png] {Booth (2m)|HighStreetBooth|2}\n\n![dollar.png] {Market Street (5m)|MarketStreet|5}"
+    }
+    
+    static HighStreetBooth() {
+        return `"Hello, are you interested in making some money quickly? Here's a list of jobs available"\n\n${GenerateHighStreetJobList()}![leave.png] {Leave (2m)|HighStreet|2}`
+    }
+    
     static MapleStreet() {
         return "You are on Maple Street. filled with trees that sway gently in the breeze. A large hospital is nearby.\n\n![hospital.png] {Hospital (1m)|Hospital|1}\n\n![beach.png] {Shoreline Street (5m)|ShorelineStreet|5}"
     }
@@ -340,7 +379,22 @@ class Scenes {
     }
     
     static LunarRoad() {
-        return "You are on Lunar Road. There appears to be nothing besides a forest nearby.\n\n{Forest (10m)|ForestLayer1|10}\n\n![school.png] {Oxford Road (5m)|OxfordRoad|5}\n![meadowbrook.png] {Meadowbrook Street (5m)|MeadowbrookStreet|5}"
+        let r = "You are on Lunar Road. There appears to be nothing besides a forest nearby."
+        r += Time <= 60 ? "You notice a faint beam of light pointing towards a manhole cover.\n\n{Manhole Cover (1m)|LunarRoadManholeCover1|1}" : ""
+        r += "\n\n![forest.png] {Forest (10m)|ForestLayer1|10}\n\n![school.png] {Oxford Road (5m)|OxfordRoad|5}\n![meadowbrook.png] {Meadowbrook Street (5m)|MeadowbrookStreet|5}"
+        return r
+    }
+    
+    static LunarRoadManholeCover1() {
+        return "You remove the manhole cover. There appears to be no ladder.\n\n![enter.png] {Enter|Blank|0|CrystalCavesManager(1,1)}\n\n{Go back|LunarRoad|0}"
+    }
+    
+    static CrystalCavesShop() {
+        return "You are in a small shop selling odd products. The shop does not have any walls. Products are stored on old wooden tables.\n\n{Moonberry ($50)|CrystalCavesShop|0|CrystalCavesStoreBuy(Moonberry)}\n\n![leave.png] {Leave|Blank|0|CrystalCavesManager(2,2)}"
+    }
+    
+    static CrystalCavesExit() {
+        return "You walk up a rocky slope until you see an exit.\n\n{Next|ForestLayer3|0}"
     }
     
     static ForestLayer1() {
@@ -445,12 +499,12 @@ class Scenes {
     }
 
     static SchoolTimetable() {
-        return "Science 9:00 - 9:45\nEnglish 9:50 - 10:35\nRecess 10:35 - 11:05\nMath 11:05 - 11:55\nBusiness 11:55 - 12:45\nLunch 12:45 - 13:15\nHistory 13:15 - 14:05\nPhysical Education 14:05 - 14:55\n{Back|SchoolHallway|0}"
+        return "Science 9:00 - 9:45\nEnglish 9:50 - 10:35\nRecess 10:35 - 11:05\nMath 11:05 - 11:55\nBusiness 11:55 - 12:45\nLunch 12:45 - 13:15\nHistory 13:15 - 14:05\nPhysical Education 14:05 - 14:55\n\n{Back|SchoolHallway|0}"
     }
     
     static SchoolCanteen() {
         let r = "You are in the canteen. Students sit at tables eating and talking."
-        r += (Time >= 765 && Time <= 795) ? "\n\n![burger.png] {Order lunch (5m)|Canteen|5|CanteenOrderLunch}" : ""
+        r += (Time >= 765 && Time < 790) ? "\n\n![burger.png] {Order lunch (25m) $5|SchoolCanteen|25|CanteenOrderLunch}" : ""
         r += "\n\n![table.png] {Rest (15m)|SchoolCanteen|15|CanteenRest}" 
         r += "\n\n![leave.png] {Leave (1m)|SchoolYard|1}"
         return r
@@ -594,7 +648,9 @@ class SceneFunctions {
         let [Subject, Type] = args
     
         if (SUBJECT_STATS[Subject]) {
-            const {xp, fatigue, time} = SUBJECT_STATS[Subject]
+            const xp = SUBJECT_STATS[Subject]['xp']
+            const fatigue = SUBJECT_STATS[Subject]['Fatigue']
+            const time = SUBJECT_STATS[Subject]['Time']
             if (Subject == "PE") {
                 Subject = "Fitness"
             }
@@ -719,7 +775,82 @@ class SceneFunctions {
             TopText = `It is the last hour of your day shift. You can leave after this.\n${ColorGen("d90202", "+9 Fatigue")}\n\nNothing interesting happened.\n\n{Next|OfficeWorkEnd|60}`
         }
     }
+
+    static StallSellManager(args) {
+        const [item, PrevStall] = args
+        const name = ITEM_DATA[item]['Name']
+        const count = Inventory[item]
+        const price = MARKET_STREET_SELL_PRICES[item]
+        const total = price * count
+        const half = Math.round(count / 2)
     
+        EndText = `Selling ${name}. You have ${count}\nPrice Per Item: ${ColorGen(TEXT_COLORS['money'], `$${price}`)}\n\n![dollar.png] {Sell One|Blank|0|SellItem(${item},1,${PrevStall})}\n![dollar.png] {Sell Half|Blank|0|SellItem(${item},${half},${PrevStall})}\n![dollar.png] {Sell All|Blank|0|SellItem(${item},${count},${PrevStall})}`
+    }
+    
+    static SellItem(args) {
+        const [item, quantity, PrevStallName] = args
+        const name = ITEM_DATA[item]['Name']
+        const total = MARKET_STREET_SELL_PRICES[item] * quantity
+        let PrevStall = MARKET_STREET_CONVERSIONS[PrevStallName]
+        Inventory[item] -= quantity
+        ChangeMoney(total)
+    
+        EndText = `You sold ${quantity} ${name} for ${ColorGen(TEXT_COLORS['money'], `$${total}`)}\n\n{Next|${PrevStall}|0}`
+    }
+    
+    static HighStreetJobDo(job) {
+        //LinkSceneOverride = true
+        //SceneManager("Empty")
+        if (HIGH_STREET_JOB_INFO[job]['Req'] && SkillCheck(HIGH_STREET_JOB_INFO[job]['Req']).length > 0) {
+            TopText = "You do not have the required skills to complete this job.\n\n{Back|HighStreetBooth|0}"
+            return
+        }
+        TopText = `You complete the job and get paid ${ColorGen(TEXT_COLORS['money'], "$" + HIGH_STREET_JOB_INFO[job]['Pay'])}`
+        if (HIGH_STREET_JOB_INFO[job]['StatEffects']) {
+            TopText += "\n"
+            for (const [effect, amt] of Object.entries(HIGH_STREET_JOB_INFO[job]['StatEffects'])) {
+                TopText += ColorGen(TEXT_COLORS['bad'], `+${amt} ${effect}`)
+                ChangeStat(effect, amt)
+            }
+        }
+        TopText += "\n\n{Next|HighStreetBooth|0}"
+        ChangeTime(HIGH_STREET_JOB_INFO[job]['Time'] * 60)
+        ChangeMoney(HIGH_STREET_JOB_INFO[job]['Pay'])
+        HighStreetJobs.splice(HighStreetJobs.indexOf(job), 1)
+    }
+    
+    static CrystalCavesManager(args) {
+        SceneFunctionRerun = {"Name": "CrystalCavesManager", "Args": args}
+        let X = Number(args[0])
+        let Y = Number(args[1])
+        let Maze = MazeGen(X, Y, 3, 3, CRYSTAL_CAVES_LOCATIONS)
+        EndText = "You are in a cave filled with glowing white crystals.\n\n"
+        if (Maze[0] != false) {
+            EndText += Maze[0] + "\n\n"
+        }
+        if (Maze[1] == true) {
+            EndText += "![arrow_up.png] {Walk north (10m)|Blank|10|CrystalCavesManager(" + X + "," + (Y - 1) + ")}\n"
+        }
+        if (Maze[2] == true) {
+            EndText += "![arrow_down.png] {Walk south (10m)|Blank|10|CrystalCavesManager(" + X + "," + (Y + 1) + ")}\n"
+        }
+        if (Maze[3] == true) {
+            EndText += "![arrow_right.png] {Walk east (10m)|Blank|10|CrystalCavesManager(" + (X + 1) + "," + Y + ")}\n"
+        }
+        if (Maze[4] == true) {
+            EndText += "![arrow_left.png] {Walk west (10m)|Blank|10|CrystalCavesManager(" + (X - 1) + "," + Y + ")}\n"
+        }
+    }
+    
+    static CanteenOrderLunch() {
+        if (Money >= 5) {
+            TopText = `You bought lunch for ${ColorGen(TEXT_COLORS['money'], "$5")}.\n${ColorGen(TEXT_COLORS['good'], "-10 Fatigue")}\n\n`
+            ChangeMoney(-5)
+            ChangeStat("Fatigue", -5)
+        } else {
+            TopText = "You do not have enough money to order lunch.\n\n"
+        }
+    }
 }
 
 // Text loaders
@@ -758,6 +889,7 @@ function ProcessText(text) {
             button.className = "MainLink"
             button.id = "Button" + num
             button.addEventListener("click", function() {
+                SceneFunctionRerun = {}
                 if (SplitLinks[num][4]) {
                     let params = SplitLinks[num][5] ? (SplitLinks[num][5].includes(",") ? SplitLinks[num][5].split(",") : SplitLinks[num][5]) : undefined
                     SceneFunctions[SplitLinks[num][4]](params)
@@ -784,7 +916,7 @@ function ProcessText(text) {
 
 function LoadText(text) {
     document.getElementById("Main").innerHTML = ""
-
+    
     if (TopText) {
         ProcessText(TopText)
         TopText = ""
@@ -835,6 +967,9 @@ function ChangeTime(amount) {
             }
             WeekDay = 1
         }
+        
+        HighStreetJobs = []
+        HighStreetJobReset = true
         document.getElementById("Day").textContent = "Day: " + Day + " " + GetDayName().substring(0,3)
     } else {
         Time += amount
@@ -977,12 +1112,12 @@ function GetNextClass() {
     } else if (Time < 895) {
         return "Physical Education"
     } else {
-        return "Nothing"
+        return "nothing"
     }
 }
 
 function SchoolClassroomOptionsGen(classroom) {
-    return `\n\nWhat would you like to do?\n\n{Study|SchoolHallway|0|ClassManager(${classroom},Study)}\n{Daydream|SchoolHallway|0|ClassManager(${classroom},Daydream)}`
+    return `\n\nWhat would you like to do?\n\n![poster.png] {Study|SchoolHallway|0|ClassManager(${classroom},Study)}\n![lunar.png] {Daydream|SchoolHallway|0|ClassManager(${classroom},Daydream)}`
 }
 
 function FishGen(Luck, count) {
@@ -1038,6 +1173,94 @@ function SkillCheck(SkillDict) {
         }
     }
     return Missing
+}
+
+function MarketStallLoader(stall) {
+    let r = ""
+    let items = MARKET_STREET_SELLABLES[stall]
+    let sellables = false
+    for (let item of items) {
+        if (Inventory[item] >= 1) {
+            r += `\n![dollar.png] {Sell ${ITEM_DATA[item]['Name']}|Blank|0|StallSellManager(${item},${stall})}`
+            sellables = true
+        }
+    }
+    r += sellables == true ? "\n" : ""
+    r += `\n![leave.png] {Leave (2m)|MarketStreet|2}`
+    return r
+}
+
+function GenerateHighStreetJobList() {
+    let output = ""
+
+    if (HighStreetJobReset) {
+        HighStreetJobReset = false
+        for (let i = 0; i < 3; i++) {
+            const key = HIGH_STREET_JOB_INFO_KEYS[Math.floor(Math.random() * HIGH_STREET_JOB_INFO_KEYS.length)]
+            const job = HIGH_STREET_JOB_INFO[key]
+            const TimeLabel = `${job['Time']}hr${job['Time'] > 1 ? "s" : ""}`
+            let ReqText = ""
+
+            if (job['Req']) {
+                ReqText = " | " + Object.entries(job['Req'])
+                    .map(([skill, value]) => ColorGen(TEXT_COLORS['xp'], `${skill} ${value}`))
+                    .join(" ")
+            }
+
+            output += `{${key}|Blank|0|HighStreetJobDo(${key})} | ${ColorGen(TEXT_COLORS['money'], `$${job['Pay']}`)} | ${TimeLabel}${ReqText}\n`
+            HighStreetJobs.push(key)
+        }
+    } else {
+        for (const key of HighStreetJobs) {
+            const job = HIGH_STREET_JOB_INFO[key]
+            const TimeLabel = `${job['Time']}hr${job['Time'] > 1 ? "s" : ""}`
+            let ReqText = ""
+
+            if (job['Req']) {
+                ReqText = " | " + Object.entries(job['Req'])
+                    .map(([skill, value]) => ColorGen(TEXT_COLORS['xp'], `${skill} ${value}`))
+                    .join(" ")
+            }
+
+            output += `{${key}|Blank|0|HighStreetJobDo(${key})} | ${ColorGen(TEXT_COLORS['money'], `$${job['Pay']}`)} | ${TimeLabel}${ReqText}\n`
+        }
+    }
+
+    return output
+}
+
+function MazeGen(PlayerX, PlayerY, X, Y, coordlist) {
+    let CoordInfo
+    if (coordlist[PlayerX + "," + PlayerY] != undefined) {
+        CoordInfo = coordlist[PlayerX + "," + PlayerY]
+    } else {
+        CoordInfo = false
+    }
+    if (PlayerX == 1) {
+        if (PlayerY == 1) {
+            return [CoordInfo, false, true, true, false] // North, South, East, West
+        } else if (PlayerY == Y) {
+            return [CoordInfo, true, false, true, false]
+        } else {
+            return [CoordInfo, true, true, true, false]
+        }
+    } else if (PlayerX == X) {
+        if (PlayerY == 1) {
+            return [CoordInfo, false, true, false, true]
+        } else if (PlayerY == Y) {
+            return [CoordInfo, true, false, false, true]
+        } else {
+            return [CoordInfo, true, true, false, true]
+        }
+    } else {
+        if (PlayerY == 1) {
+            return [CoordInfo, false, true, true, true]
+        } else if (PlayerY == Y) {
+            return [CoordInfo, true, false, true, true]
+        } else {
+            return [CoordInfo, true, true, true, true]
+        } 
+    }
 }
 
 // Buttons
@@ -1173,6 +1396,20 @@ document.getElementById("SetRng").addEventListener("click", function() {
     ForcedRng = Number(document.getElementById("ForceRng").value)
 })
 
+document.getElementById("SaveButton").addEventListener("click", function() {
+    localStorage.setItem("save", EncodeSave())
+    alert("Game saved")
+})
+
+document.getElementById("LoadButton").addEventListener("click", function() {
+    let tempsave = localStorage.getItem("save")
+    if (tempsave != null) {
+        LoadSave(tempsave)
+    } else {
+        alert("No save found")
+    }
+})
+
 function FormatTime(si) {
     const seconds = Math.floor(Math.abs(si))
     const h = Math.floor(seconds / 3600)
@@ -1195,7 +1432,7 @@ function EncodeSave() {
     let gameState = {
         Money, Time, Day, WeekDay, TotalTime, OldScene, CurrentScene, Playtime, TopText, EndText,
         LinkSceneOverride, Stats, Checks, Jobs, OfficeRank, OfficePromotionXP, Skills, SkillXp, Cooldowns, Inventory,
-        Debt, DebtDue, Counts, Owned, EquippedRod, EquippedBait
+        Debt, DebtDue, Counts, Owned, EquippedRod, EquippedBait, HighStreetJobs, HighStreetJobReset, SceneFunctionRerun
     }
 
     if (OfficeRank == 0 && OfficePromotionXP == 0) {
@@ -1236,6 +1473,7 @@ function DecodeSave(EncodedState) {
 }
 
 function LoadSave(save) {
+    const OriginalSkills = Skills
     let decoded = DecodeSave(save);
 
     ({
@@ -1255,8 +1493,6 @@ function LoadSave(save) {
         Jobs = {},
         OfficeRank = 0,
         OfficePromotionXP = 0,
-        Skills,
-        SkillXp,
         Cooldowns = {},
         Inventory = {},
         Debt,
@@ -1264,9 +1500,36 @@ function LoadSave(save) {
         Counts = Counts,
         Owned = Owned,
         EquippedRod = null,
-        EquippedBait = null
+        EquippedBait = null,
+        HighStreetJobs = [],
+        HighStreetJobReset = true,
+        SceneFunctionRerun = {}
     } = decoded)
+    
+    for (const [skill, val] of Object.entries(decoded['SkillXp'])) {
+        SkillXp[skill] = val
+    }
+    
+    for (const [skill, val] of Object.entries(decoded['Skills'])) {
+        Skills[skill] = val
+        ChangeXp(skill, 0)
+    }
+    
+    if (SceneFunctionRerun['Name'] != undefined) {
+        SceneFunctions[SceneFunctionRerun['Name']](SceneFunctionRerun['Args'])
+    }
     SceneManager(CurrentScene)
+    document.getElementById("Day").textContent = "Day: " + Day + " " + GetDayName().substring(0,3)
+    let m = Time % 60
+    let h = (Time-m)/60
+    document.getElementById("Clock").textContent = (h < 10 ? "0" : "") + h.toString() + ":" + (m < 10 ? "0" : "") + m.toString()
+    for (const [stat, val] of Object.entries(Stats)) {
+        ChangeStat(stat, 0)
+    }
 }
 
 SceneManager("Menu")
+
+if (window.location.hostname == "localhost") {
+    EnableDebug()
+}
