@@ -1,3 +1,14 @@
+v0.4.0
+- Added Iron Gym
+- Changed can't afford texts to gray / grey
+- Added mountain and dirt path
+- Fixed saving again
+- Fix hospitalisation
+- Added Meadowbrook Park
+- Added library
+- Added jail
+- Changed hospitalisation health to 15
+
 v0.3.0
 - Fixed version number
 - Added market street

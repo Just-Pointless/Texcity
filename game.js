@@ -1,6 +1,6 @@
 // Yes all the code is written in whatever_iWantto-case
 
-const VERSION = "0.3.0"
+const VERSION = "0.4.0"
 document.getElementById("GameTitle").textContent = `Texcity v${VERSION}`
 
 // Variables
@@ -34,6 +34,11 @@ var EquippedBait = null
 var HighStreetJobs = []
 var HighStreetJobReset = true
 var SceneFunctionRerun = {}
+var DailySubs = {}
+var DailyResets = {}
+var JailRelease = null
+var CurrentLocation = ""
+var DisableHospitalisation = false
 
 var ForcedRng = -1
 
@@ -72,7 +77,18 @@ const ITEM_DATA = {
     "Bass": {"Name": "Bass"},
     "Catfish": {"Name": "Catfish"},
     "Tuna": {"Name": "Tuna"},
-    "Shark": {"Name": "Shark"}
+    "Shark": {"Name": "Shark"},
+    "MountainPackage": {"Name": "Mountain Package"},
+    "Flower": {"Name": "Flowers"}
+}
+const LOCATIONS = {
+    "JailCell": "Jail",
+    "JailSleep": "Jail",
+    "JailCenter": "Jail",
+    "JailYard": "Jail",
+    "JailCafeteria": "Jail",
+    "BankJailIntro3": "Jail",
+    "JailInfirmaryUnconscious": "Jail"
 }
 const SUBJECT_STATS = {
     "Science": {"xp": 10, "Fatigue": 10, "Time": 585},
@@ -122,6 +138,7 @@ const HIGH_STREET_JOB_INFO = {
 }
 const HIGH_STREET_JOB_INFO_KEYS = Object.keys(HIGH_STREET_JOB_INFO)
 const CRYSTAL_CAVES_LOCATIONS = {"2,2": "![dollar.png] {Shop|CrystalCavesShop|0}", "3,3": "![leave.png] {Exit (10m)|CrystalCavesExit|10}"}
+
 // Scenes
 class Scenes {
     static Menu() {
@@ -133,7 +150,7 @@ class Scenes {
     }
     
     static Tutorial() {
-        return "Welcome to Texcity.\nImportant reminder that this game is not finished yet so there may be changes made in the future. Saving doesn't exist yet.\n\nthe duration of each action is usually shown in brackets after the blue text.\ne.g. Home (1h 15m)\n\nPress the blue text below to continue.\n{Next|Home|0}"
+        return "Welcome to Texcity.\nImportant reminder that this game is not finished yet so there may be changes made in the future. Saving doesn't exist yet.\n\nthe duration of each action is usually shown in brackets after the blue text.\ne.g. Home (1h 15m)\n\nPress the blue text below to continue.\n\n{Next|Home|0}"
     }
     
     static Home() {
@@ -145,16 +162,26 @@ class Scenes {
     }
     
     static ApartmentHall() {
+        if (Checks['BankDebtNotice'] && !Checks['DebtCollector']) {
+            delete Checks['BankDebtNotice']
+            return `A banker approaches you.\n\n"Good ${GetTimeName(true)}, I'm here to remind you that your weekly debt payment is overdue. This will negatively affect your reputation so I recommend paying it off as soon as possible. If you've forgotten, our bank is at ${ColorGen(TEXT_COLORS['important'], "Crestwood Street")}"\n\n{Next|ApartmentHall|0}`
+        }
+        if (Checks['DebtCollector']) {
+            delete Checks['BankDebtNotice']
+            delete Checks['DebtCollector']
+            DisableHospitalisation = true
+            return `A tall, wiry man in a black bowler hat steps into your path.\n\n"${Capitalise(GetTimeName(true))}. You've missed your weekly debt payments for two weeks now. A shorter figure appears, arms crossed.\n\n"Late payments aren't good for business. We'll need you to come with us."\n\n{Next|BankDebtRoom|20}`
+        }
         if (Checks['BankerIntro']) {
             return "You are in the hall of your apartment block. One of the lights is constantly flickering and some of the paint on the walls has peeled off.\n\n![wood_door.png] {Your apartment (1m)|Home|1}\n\n![leave.png] {Go outside (1m)|MeadowbrookStreet|1}"
         } else {
             Checks['BankerIntro'] = true
-            return "As you step out of your apartment a skinny man with a black bowler hat approaches you.\n\n\"Greetings, we've met before. I'm here to remind you about your outstanding balance of $10000, with a payment of $100 due next week. If you've forgotten, our bank is at " + ColorGen(TEXT_COLORS['important'], "Crestwood Street") + ". You can visit at any time to inquire about the remaining amount you owe.\"\n\n{Next|ApartmentHall|0}"
+            return "As you step out of your apartment a skinny man with a black bowler hat approaches you.\n\n\"Greetings, we've met before. I'm here to remind you about your outstanding balance of $10,000 with a payment of $100 due next week. If you've forgotten, our bank is at " + ColorGen(TEXT_COLORS['important'], "Crestwood Street") + ". You can visit at any time to inquire about the remaining amount you owe.\"\n\n{Next|ApartmentHall|0}"
         }
     }
     
     static MeadowbrookStreet() {
-        return "You are on Meadowbrook Street. The street is quiet and lined with small apartments. A convenience store is nearby.\n\n![enter.png] {Apartment block (1m)|ApartmentHall|1}\n![convenience_store.png] {Convenience Store (1m)|ConvenienceStore|1}\n\n![crestwood.png] {Crestwood Street (5m)|CrestwoodStreet|5}\n![lunar.png] {Lunar Road (5m)|LunarRoad|5}"
+        return "You are on Meadowbrook Street. The street is quiet and lined with small apartments. A convenience store is nearby.\n\n![enter.png] {Apartment block (1m)|ApartmentHall|1}\n![convenience_store.png] {Convenience Store (1m)|ConvenienceStore|1}\n\n![meadowbrook.png] {Park (5m)|MeadowbrookPark|5}\n![crestwood.png] {Crestwood Street (5m)|CrestwoodStreet|5}\n![lunar.png] {Lunar Road (5m)|LunarRoad|5}"
     }
     
     static ConvenienceStore() {
@@ -171,6 +198,10 @@ class Scenes {
     static ConvenienceStoreWorkIntro2() {
         Jobs['ConvenienceStore'] = true
         return "You listen carefully as he explains what to do.\n\n{Next|ConvenienceStore|0}"
+    }
+    
+    static MeadowbrookPark() {
+        return "You are in Meadowbrook Park. There's a few benches and patches of flowers.\n\n![search.png] {Explore (20m)|MeadowbrookPark|20|MeadowbrookParkExplore}\n![table.png] {Rest (20m)|MeadowbrookPark|20|MeadowbrookParkRest}\n\n![meadowbrook.png] {Meadowbrook Street (5m)|MeadowbrookStreet|5}"
     }
 
     static CrestwoodStreet() {
@@ -189,6 +220,79 @@ class Scenes {
         r += Money >= DebtDue ? "![dollar.png] {Pay|Bank|1|PayDebt}" : ColorGen(TEXT_COLORS['bad'], "Not enough money")
         r += "\n![leave.png] {Leave|Bank|1}"
         return r
+    }
+    
+    static BankDebtRoom() {
+        return "The two debt collectors lead you to a door in the bank. The wiry man tells you to go in.\n\n{Next|BankDebtRoom2|0}"
+    }
+
+    static BankDebtRoom2() {
+        let r = "You walk into a large room. There is nothing else in the room besides a man sitting behind a desk.\n\n\"Hello, according to our records you have missed your debt payments for the past few weeks.\"\n\nThe man quickly types something into his computer.\n\n\"You have two options. You can pay off the debt right now or go to jail for 7 days.\"\n\n"
+        r += Money >= DebtDue ? "![dollar.png] {Pay Debt ($" + DebtDue + ")|Bank|0|DebtPay}" : ColorGen(TEXT_COLORS['bad'], "Not enough money")
+        r += "\n![jail.png] {Jail (7d)|BankJailIntro|60}"
+        return r
+    }
+
+    static BankJailIntro() {
+        return "The two debt collectors enter the room and lead you to a car.\n\n{Next|BankJailIntro2|10}"
+    }
+
+    static BankJailIntro2() {
+        return "You sit in the back seat of the car.\n\nThe wiry man in the bowler hat glances at you briefly before turning his attention back to the road.\n\n{Next|BankJailIntro3|10}"
+    }
+
+    static BankJailIntro3() {
+        JailRelease = Day + 7
+        DisableHospitalisation = false
+        return "The car rolls to a stop outside a nondescript, looming building.\n\n\"Time to go.\" the wiry man mutters.\n\nYou step out of the car. The sound of your footsteps echoes faintly as the two debt collectors guide you towards the jail entrance.\n\nIt's very quiet inside. The walls are pale and plain. The two debt collectors lead you to a cell. \"Here's where you will be staying for the duration of your sentence\".\n\n{Next|JailCell|0}"
+    }
+
+    static JailCell() {
+        let r = `You are in your jail cell. It's currently ${GetDayName()} ${GetTimeName(false)}.`
+        r += Time >= 420 && Time < 900 ? ColorGen(TEXT_COLORS['bad'], "\n\nYou are not allowed to sleep right now") : "\n\n![bed.png] {Sleep|JailSleep|0}"
+        r += Time < 420 || Time > 1320 ? ColorGen(TEXT_COLORS['bad'], "\n\nYou are not allowed to leave right now") : "\n\n![leave.png] {Leave (2m)|JailCenter|2}"
+        if (JailRelease <= Day) {
+            return "A guard opens your cell door.\n\"Your sentence is over. You are allowed to leave now\"\n\n![leave.png] {Leave (5m)|CliftonStreet|5}"
+        }
+        return r
+    }
+
+    static JailSleep() {
+        return "{Sleep for 1 hour|JailCell|0|JailSleep(1)}\n\n{Sleep for 2 hours|JailCell|0|JailSleep(2)}\n\n{Sleep for 3 hours|JailCell|0|JailSleep(3)}\n\n{Sleep for 4 hours|JailCell|0|JailSleep(4)}\n\n{Sleep for 6 hours|JailCell|0|JailSleep(6)}\n\n{Sleep for 8 hours|JailCell|0|JailSleep(8)}\n\n{Sleep for 10 hours|JailCell|0|JailSleep(10)}\n\n{Cancel|JailCell|0}"
+    }
+
+    static JailCenter() {
+        if (Time < 420 && Time > 1320) {
+            return "A guard walks towards you.\n\n\"You're supposed to be in your cell right now.\" he states firmly.\n\nYou are escorted back to your cell.\n{Next|JailCell|5}"
+        }
+        return "You are in the center of the jail. You can access your cell here or go to the yard.\n\n![table.png] {Yard (3m)|JailYard|3}\n![burger.png] {Cafeteria (2m)|JailCafeteria|2}\n\n![jail.png] {Cell (2m)|JailCell|2}"
+    }
+
+    static JailYard() {
+        if (Time < 420 && Time > 1320) {
+            return "A guard walks towards you.\n\n\"You're supposed to be in your cell right now.\" he states firmly.\n\nYou are escorted back to your cell.\n{Next|JailCell|5}"
+        }
+        return "You are in the jail yard. You can excercise here.\n\n![dumbbell.png] {Jog (20m)|JailYard|20|JailJog}\n![table.png] {Rest (20m)|JailYard|20|JailRest}\n\n![jail.png] {Jail Center (3m)|JailCenter|3}"
+    }
+
+    static JailCafeteria() {
+        if (Checks["JailEat"] && Math.abs(Time - Checks["JailEat"] > 120))
+            delete Checks["JailEat"]
+        if (Time < 420 && Time > 1320) {
+            return "A guard walks towards you.\n\n\"You're supposed to be in your cell right now.\" he states firmly.\n\nYou are escorted back to your cell.\n{Next|JailCell|5}"
+        }
+        if ((Time >= 690 && Time <= 780) || (Time >= 1050 && Time < 1140)) {
+            let r = "You are in the jail cafeteria. You can come here to eat lunch and dinner."
+            r += Checks["JailEat"] ? ColorGen(TEXT_COLORS['unavailable'], "\n\nYou've already eaten") : "\n\n![burger.png] {Eat (20m)|JailCafeteria|20|JailEat}"
+            r += "\n\n![jail.png] {Jail Center (2m)|JailCenter|2}"
+            return r
+        } else {
+            return "The jail cafeteria is closed.\n\n{Back (2m)|JailCenter|2}"
+        }
+    }
+
+    static JailInfirmaryUnconscious() {
+        return "You wake up in a bed. A doctor stands nearby, checking a clipboard.\n\n\"You pushed yourself too hard. Try to rest more.\" says the doctor.\n\n{Get up (2m)|JailCenter|2}"
     }
     
     static Office() {
@@ -363,7 +467,7 @@ class Scenes {
     }
     
     static MapleStreet() {
-        return "You are on Maple Street. filled with trees that sway gently in the breeze. A large hospital is nearby.\n\n![hospital.png] {Hospital (1m)|Hospital|1}\n\n![beach.png] {Shoreline Street (5m)|ShorelineStreet|5}"
+        return "You are on Maple Street. filled with trees that sway gently in the breeze. A large hospital and library is nearby.\n\n![hospital.png] {Hospital (1m)|Hospital|1}\n![dumbbell.png] {Iron Gym (2m)|IronGym|2}\n![poster.png] {Library (2m)|Library|2}\n\n![beach.png] {Shoreline Street (5m)|ShorelineStreet|5}"
     }
     
     static Hospital() {
@@ -372,6 +476,37 @@ class Scenes {
     
     static HospitalUnconscious() {
         return "You wake up in a hospital bed. A doctor stands nearby, checking a clipboard.\n\n\"You pushed yourself too hard. Try to rest more.\" says the doctor.\n\n{Get up (2m)|Hospital|2}"
+    }
+    
+    static IronGym() {
+        let r = "You are inside the gym. Machines clank as people work out.\n\n"
+    
+        if (!DailySubs["IronGym"]) {
+            r += `![dollar.png] {Buy Membership ($5)|IronGym|1|IronGymBuy}`
+        } else {
+            r += `![cross.png] {Cancel Membership|IronGym|1|IronGymCancel}\n\n`
+            r += `![dumbbell.png] {Workout (1h)|IronGym|60|IronGymWorkout}`
+        }
+    
+        r += `\n\n![leave.png] {Leave (2m)|MapleStreet|2}`
+        return r
+    }
+    
+    static Library() {
+        let r = "You are in the library. It has shelves full of books and study tables.\n\n"
+        if (!DailyResets['Library']) {
+            r += "![poster.png] {Take Science Book (1m)|Library|1|LibraryChoose(Science)}\n"
+            r += "![poster.png] {Take English Book (1m)|Library|1|LibraryChoose(English)}\n"
+            r += "![poster.png] {Take Business Book (1m)|Library|1|LibraryChoose(Business)}\n"
+            r += "![poster.png] {Take History Book (1m)|Library|1|LibraryChoose(History)}\n"
+        } else if (DailyResets['LibraryHours'] > 0) {
+            r += `![poster.png] {Continue Reading (1h)|Library|60|LibraryRead}\n`
+        } else {
+            r += "You've finished reading for today.\n"
+        }
+    
+        r += "\n![leave.png] {Leave (2m)|MapleStreet|2}"
+        return r
     }
     
     static Blank() {
@@ -411,8 +546,40 @@ class Scenes {
     static ForestLayer3() {
         let r = "You are near the center of the forest. There are trees everywhere. They block most of the sunlight making it hard to see.\n\n"
         r += Skills['Foraging'] >= 6 ? "![search.png] {Look for berries (20m)|ForestLayer3|20|ForestGather(3)}" : ColorGen(TEXT_COLORS['requirement'], "Requires: Foraging 6")
-        r += "\n\n![arrow_left.png] {Walk towards the exit (20m)|ForestLayer2|20}"
+        r += "\n\n![dirt_path.png] {Dirt Path (20m)|DirtPath|20}\n![arrow_left.png] {Walk towards the exit (20m)|ForestLayer2|20}"
         return r
+    }
+    
+    static DirtPath() {
+        return "You are standing on a dirt path. The air smells fresh. Trees rustle in the distance.\n\n![mountain.png] {Mountain (20m)|MountainBase|20}\n![forest.png] {Forest (20m)|ForestLayer3|20}"
+    }
+    
+    static MountainBase() {
+        let r = "You are at the base of a small mountain. A path leads up into the slopes.\n\n"
+        r += !("MountainQuest" in DailyResets) && !(Inventory['MountainPackage'] >= 1) ? `![poster.png] {Quest (2m)|MountainQuestMan|2}\n` : ""
+        r += `![arrow_up.png] {Climb (3h)|Blank|60|MountainClimbManager(1)}\n\n![dirt_path.png] {Dirt Path (20m)|DirtPath|20}`
+        return r
+    }
+    
+    static MountainQuestMan() {
+        return `"Hey, are you interested in earning ${ColorGen(TEXT_COLORS['money'], "$40")}? If so, deliver this package to the top of the mountain and my friend will hand you the money."\n\n![tick.png] {Accept|MountainBase|5|MountainQuestStart}\n![cross.png] {Refuse|MountainBase|2}`
+    }
+    
+    static MountainTop() {
+        let r = "You've reached the top of the mountain.\n\n"
+    
+        if (Inventory["MountainPackage"]) {
+            ChangeInventory("MountainPackage", -1)
+            ChangeMoney(40)
+            r += `You delivered the package and received ${ColorGen(TEXT_COLORS["money"], "$40")}.\n\n`
+        }
+    
+        r += "![arrow_down.png] {Descend (1h)|MountainBase|60|MountainDescend}"
+        return r
+    }
+
+    static CliftonStreet() {
+        return "You are on Clifton Street. There's a jail nearby with two guards standing near the entrance.\n\n![lunar.png] {Lunar Road (5m)|LunarRoad|5}"
     }
 
     static OxfordRoad() {
@@ -543,7 +710,7 @@ class SceneFunctions {
     static ConvenienceStoreBuy(item) {
         if (item == "EnergyDrink") {
             if (Money < 10) {
-                TopText = "You don't have enough money to purchase this item.\n\n"
+                TopText = `${ColorGen(TEXT_COLORS['unavailable'], "You don't have enough money to purchase this item")}\n\n`
                 return
             }
             ChangeMoney(-10)
@@ -597,6 +764,8 @@ class SceneFunctions {
     }
     
     static PayDebt() {
+        if (Checks['DebtCollector']) {delete Checks['DebtCollector']}
+        if (Checks['BankDebtNotice']) {delete Checks['BankDebtNotice']}
         ChangeMoney(DebtDue * -1)
         Debt -= DebtDue
         DebtDue = 0
@@ -674,7 +843,7 @@ class SceneFunctions {
             Owned[rod] = true
             TopText = `You bought a ${RODS[rod]['Name']} for $${RODS[rod]['Price']}\n\n`
         } else {
-            TopText = "You don't have enough money to purchase this item.\n\n"
+            TopText = `${ColorGen(TEXT_COLORS['unavailable'], "You don't have enough money to purchase this item")}\n\n`
         }
     }
 
@@ -746,7 +915,7 @@ class SceneFunctions {
             }
             TopText = `You bought ${amount}x ${BAIT[bait]['Name']} for $${BAIT[bait]['Price'] * amount}\n\n`
         } else {
-            TopText = "You don't have enough money to purchase this.\n\n"
+            TopText = `${ColorGen(TEXT_COLORS['unavailable'], "You don't have enough money to purchase this")}\n\n`
         }
     }
 
@@ -758,22 +927,23 @@ class SceneFunctions {
         if (hour < 8) {
             if (rng < 100) {
                 ChangeStat("Fatigue", 12)
-                TopText += `${ColorGen("d90202", "+12 Fatigue")}\n\nYou had to deliver documents to your manager.`
+                TopText += `${ColorGen(TEXT_COLORS['bad'], "+12 Fatigue")}\n\nYou had to deliver documents to your manager.`
             } else if (rng < 150) {
                 ChangeStat("Fatigue", 3)
-                TopText += `${ColorGen("d90202", "+3 Fatigue")}\n\nYou got a short break during your shift.`
+                TopText += `${ColorGen(TEXT_COLORS['bad'], "+3 Fatigue")}\n\nYou got a short break during your shift.`
             } else if (rng < 250) {
                 ChangeStat("Fatigue", 10)
-                TopText += `${ColorGen("d90202", "+10 Fatigue")}\n\nYou had to attend an informational meeting for the entire hour.`
+                TopText += `${ColorGen(TEXT_COLORS['bad'], "+10 Fatigue")}\n\nYou had to attend an informational meeting for the entire hour.`
             } else {
                 ChangeStat("Fatigue", 9)
-                TopText += `${ColorGen("d90202", "+9 Fatigue")}\n\nNothing interesting happened.`
+                TopText += `${ColorGen(TEXT_COLORS['bad'], "+9 Fatigue")}\n\nNothing interesting happened.`
             }
             TopText += `\n\n{Next|Blank|60|OfficeWorkManager(${hour + 1})}`
         } else if (hour == 8) {
             ChangeStat("Fatigue", 9)
-            TopText = `It is the last hour of your day shift. You can leave after this.\n${ColorGen("d90202", "+9 Fatigue")}\n\nNothing interesting happened.\n\n{Next|OfficeWorkEnd|60}`
+            TopText = `It is the last hour of your day shift. You can leave after this.\n${ColorGen(TEXT_COLORS['bad'], "+9 Fatigue")}\n\nNothing interesting happened.\n\n{Next|OfficeWorkEnd|60}`
         }
+        SceneFunctionRerun = {"TopText": TopText}
     }
 
     static StallSellManager(args) {
@@ -802,7 +972,7 @@ class SceneFunctions {
         //LinkSceneOverride = true
         //SceneManager("Empty")
         if (HIGH_STREET_JOB_INFO[job]['Req'] && SkillCheck(HIGH_STREET_JOB_INFO[job]['Req']).length > 0) {
-            TopText = "You do not have the required skills to complete this job.\n\n{Back|HighStreetBooth|0}"
+            TopText = `${ColorGen(TEXT_COLORS['unavailable'], "You do not have the required skills to complete this job")}\n\n{Back|HighStreetBooth|0}`
             return
         }
         TopText = `You complete the job and get paid ${ColorGen(TEXT_COLORS['money'], "$" + HIGH_STREET_JOB_INFO[job]['Pay'])}`
@@ -820,7 +990,6 @@ class SceneFunctions {
     }
     
     static CrystalCavesManager(args) {
-        SceneFunctionRerun = {"Name": "CrystalCavesManager", "Args": args}
         let X = Number(args[0])
         let Y = Number(args[1])
         let Maze = MazeGen(X, Y, 3, 3, CRYSTAL_CAVES_LOCATIONS)
@@ -840,6 +1009,7 @@ class SceneFunctions {
         if (Maze[4] == true) {
             EndText += "![arrow_left.png] {Walk west (10m)|Blank|10|CrystalCavesManager(" + (X - 1) + "," + Y + ")}\n"
         }
+        SceneFunctionRerun = {"TopText": TopText}
     }
     
     static CanteenOrderLunch() {
@@ -848,7 +1018,134 @@ class SceneFunctions {
             ChangeMoney(-5)
             ChangeStat("Fatigue", -5)
         } else {
-            TopText = "You do not have enough money to order lunch.\n\n"
+            TopText = `${ColorGen(TEXT_COLORS['unavailable'], "You do not have enough money to order lunch")}\n\n`
+        }
+    }
+
+    static IronGymBuy() {
+        if (Money >= 5) {
+            ChangeMoney(-5)
+            DailySubs['IronGym'] = 5
+            TopText = `You purchased a gym membership for ${ColorGen(TEXT_COLORS['money'], "$5")}.\n\n`
+        } else {
+            TopText = `${ColorGen(TEXT_COLORS['unavailable'], "You don't have enough money for a membership")}\n\n`
+        }
+    }
+    
+    static IronGymCancel() {
+        delete DailySubs['IronGym']
+        TopText = `Your gym membership has been cancelled\n\n`
+    }
+    
+    static IronGymWorkout() {
+        ChangeStat("Fatigue", 20)
+        ChangeXp("Fitness", 10)
+    
+        TopText = `You did a 60 minute workout.\n${ColorGen(TEXT_COLORS['bad'], "+20 Fatigue")}\n${ColorGen(TEXT_COLORS['xp'], "+10 Fitness XP")}\n\n`
+    }
+    
+    static MountainQuestStart() {
+        ChangeInventory("MountainPackage", 1)
+        TopText = `${ColorGen(TEXT_COLORS["important"], "You accepted the quest to deliver the package to the mountain top")}\n\n`
+    }
+    
+    static MountainClimbManager(step) {
+        step = Number(step)
+        let fatigue = RandomNumber(12, 18) - (Skills["Fitness"] || 0)
+        if (fatigue < 7) {fatigue = 7}
+        let HealthLoss = 0
+        let rng = GetRng()
+    
+        let desc = ""
+        if (rng < 200) {
+            HealthLoss = 10
+            desc = "You slipped on loose rocks and scraped your arm."
+        } else if (rng < 400) {
+            desc = "You took a wrong turn and had to backtrack."
+        } else if (rng < 600) {
+            desc = "You carefully climbed a steep section without issue."
+        } else {
+            desc = "Nothing interesting happened."
+        }
+    
+        ChangeStat("Fatigue", fatigue)
+        ChangeXp("Fitness", 5)
+        if (HealthLoss > 0) {ChangeStat("Health", -HealthLoss)}
+    
+        TopText += `${desc}\n`
+        TopText += `${ColorGen(TEXT_COLORS["bad"], `+${fatigue} Fatigue`)}`
+        if (HealthLoss > 0) {TopText += `\n${ColorGen(TEXT_COLORS["bad"], `-${HealthLoss} Health`)}`}
+        TopText += `\n${ColorGen(TEXT_COLORS['xp'], "+5 Fitness XP")}`
+        
+        if (step < 3) {
+            TopText += `\n\n![arrow_up.png] {Next|Blank|60|MountainClimbManager(${step + 1})}\n![cross.png] {Descend (${step * 15}m)|MountainBase|${step * 15}}`
+        } else {
+            TopText += `\n\n![arrow_up.png] {Next|MountainTop|60}`
+        }
+        SceneFunctionRerun = {"TopText": TopText}
+    }
+    
+    static MountainDescend() {
+        ChangeStat("Fatigue", 10)
+        TopText = `${ColorGen(TEXT_COLORS["bad"], "+10 Fatigue")}\nYou carefully make your way down the mountain.\n\n`
+    }
+    
+    static MeadowbrookParkExplore() {
+        let rng = GetRng()
+        let amount = RandomNumber(1, 2)
+        ChangeStat("Fatigue", 10)
+        if (rng < 750) {
+            ChangeInventory("Flower", amount)
+            TopText = `You found ${amount} flower${amount > 1 ? "s" : ""}.\n${ColorGen(TEXT_COLORS['bad'], "+10 Fatigue")}\n\n`
+        } else {
+            TopText = `You didn't find anything.\n${ColorGen(TEXT_COLORS['bad'], "+10 Fatigue")}\n\n`
+        }
+    }
+    
+    static MeadowbrookParkRest() {
+        ChangeStat("Fatigue", -3)
+        TopText = `You sit down on the bench and relax\n${ColorGen(TEXT_COLORS['good'], "-3 Fatigue")}\n\n`
+    }
+    
+    static LibraryChoose(skill) {
+        DailyResets['Library'] = true
+        DailyResets['LibraryBook'] = skill
+        DailyResets['LibraryHours'] = 3
+        TopText = `You picked up a book on ${skill}.\n\n`
+    }
+    
+    static LibraryRead() {
+        DailyResets['LibraryHours'] -= 1
+        ChangeXp(DailyResets['LibraryBook'], 4)
+        ChangeStat("Fatigue", 3)
+        TopText = `You read through the ${DailyResets['LibraryBook'].toLowerCase()} book.\n${ColorGen(TEXT_COLORS['bad'], "+3 Fatigue")}\n${ColorGen(TEXT_COLORS['xp'], `+4 ${DailyResets['LibraryBook']} XP`)}\n\n`
+    }
+
+    static JailJog() {
+        ChangeXp("Fitness", 2)
+        ChangeStat("Fatigue", 5)
+        TopText = "You jog for 20 minutes.\n" + ColorGen(TEXT_COLORS['bad'], "+5 Fatigue") + ColorGen(TEXT_COLORS['xp'], "\n+2 Fitness XP") + "\n\n"
+    }
+
+    static JailRest() {
+        ChangeStat("Fatigue", -2)
+        TopText = "You rest for 20 minutes.\n" + ColorGen(TEXT_COLORS['good'], "-2 Fatigue") + "\n\n"
+    }
+
+    static JailEat() {
+        ChangeStat("Fatigue", -10)
+        Checks['JailEat'] = Time
+        TopText = "You eat the food that you are served. It's slightly plain but it still restores your energy.\n" + ColorGen(TEXT_COLORS['good'], "-10 Fatigue") + "\n\n"
+    }
+
+    static JailSleep(hours) {
+        if (Time + (hours * 60) >= 420 && Time < 900) {
+            ExtraText = "You are woken up by a guard.\n\n"
+            ChangeStat("Fatigue", -10 * ((420 - Time) / 60))
+            ChangeTime(420 - Time)
+        } else {
+            ChangeTime(hours * 60)
+            ChangeStat("Fatigue", -10 * hours)
         }
     }
 }
@@ -937,6 +1234,9 @@ function SceneManager(selected) {
     LoadText(thescene)
     OldScene = CurrentScene
     CurrentScene = selected
+    if (selected != "Blank") {
+        CurrentLocation = LOCATIONS[selected] != null ? LOCATIONS[selected] : ""
+    }
     document.getElementById("Money").textContent = "$" + Money
     console.log("Loaded scene " + selected + " in " + String(Date.now() - timetick) + "ms")
 }
@@ -959,6 +1259,9 @@ function ChangeTime(amount) {
                     
         if (WeekDay >= 8) {
             if (DebtDue != 0) {
+                if (Checks['BankDebt']) {
+                    Checks['DebtCollector'] = true
+                }
                 Checks['BankDebt'] = true
                 Checks['BankDebtNotice'] = true
             }
@@ -970,6 +1273,15 @@ function ChangeTime(amount) {
         
         HighStreetJobs = []
         HighStreetJobReset = true
+        DailyResets = {}
+        
+        for (var key of Object.keys(DailySubs)) {
+            if (Money - DailySubs[key] < 0) {
+                delete DailySubs[key]
+            } else {
+                ChangeMoney(DailySubs[key] * -1)
+            }
+        }
         document.getElementById("Day").textContent = "Day: " + Day + " " + GetDayName().substring(0,3)
     } else {
         Time += amount
@@ -1023,12 +1335,17 @@ function ChangeStat(stat, amount) {
         }
     } else if (stat == "Health") {
         Stats['Health'] = Math.min(Stats['Health'] + amount, 100)
-        if (Stats['Health'] <= 0) {
+        if (Stats['Health'] <= 0 && !DisableHospitalisation) {
             //document.getElementById("SidebarHealth").style.color = "Red"
             LinkSceneOverride = true
-            SetStat("Health", 30)
+            SetStat("Health", 15)
             SetStat("Fatigue", 90)
-            TopText += "You pass out due to being too tired.\n\n{Next (3h)|HospitalUnconscious|180}"
+            if (CurrentLocation != "Jail") {
+                TopText = "You pass out due to being too tired.\n\n{Next (3h)|HospitalUnconscious|180}"
+            } else if (CurrentLocation == "Jail") {
+                TopText = "You pass out due to being too tired.\n\n{Next (3h)|JailInfirmaryUnconscious|180}"
+            }
+            EndText = ""
             SceneManager("Blank")
         } else {
             document.getElementById("SidebarHealth").style.color = "White"
@@ -1263,6 +1580,10 @@ function MazeGen(PlayerX, PlayerY, X, Y, coordlist) {
     }
 }
 
+function Capitalise(s) {
+    return s[0].toUpperCase() + s.slice(1)
+}
+
 // Buttons
 
 document.getElementById("SidebarToggle").addEventListener("click", function() {
@@ -1432,7 +1753,8 @@ function EncodeSave() {
     let gameState = {
         Money, Time, Day, WeekDay, TotalTime, OldScene, CurrentScene, Playtime, TopText, EndText,
         LinkSceneOverride, Stats, Checks, Jobs, OfficeRank, OfficePromotionXP, Skills, SkillXp, Cooldowns, Inventory,
-        Debt, DebtDue, Counts, Owned, EquippedRod, EquippedBait, HighStreetJobs, HighStreetJobReset, SceneFunctionRerun
+        Debt, DebtDue, Counts, Owned, EquippedRod, EquippedBait, HighStreetJobs, HighStreetJobReset, SceneFunctionRerun, DailySubs,
+        DailyResets, JailRelease, DisableHospitalisation
     }
 
     if (OfficeRank == 0 && OfficePromotionXP == 0) {
@@ -1503,20 +1825,31 @@ function LoadSave(save) {
         EquippedBait = null,
         HighStreetJobs = [],
         HighStreetJobReset = true,
-        SceneFunctionRerun = {}
+        SceneFunctionRerun = {},
+        DailySubs = {},
+        DailyResets = {},
+        JailRelease = null,
+        DisableHospitalisation = false
     } = decoded)
     
-    for (const [skill, val] of Object.entries(decoded['SkillXp'])) {
-        SkillXp[skill] = val
+    if ("SkillXp" in decoded) {
+        for (const [skill, val] of Object.entries(decoded['SkillXp'])) {
+            SkillXp[skill] = val
+            ChangeXp(skill, 0)
+        }
     }
     
-    for (const [skill, val] of Object.entries(decoded['Skills'])) {
-        Skills[skill] = val
-        ChangeXp(skill, 0)
+    if ("Skills" in decoded) {
+        for (const [skill, val] of Object.entries(decoded['Skills'])) {
+            Skills[skill] = val
+            ChangeXp(skill, 0)
+        }
     }
     
-    if (SceneFunctionRerun['Name'] != undefined) {
-        SceneFunctions[SceneFunctionRerun['Name']](SceneFunctionRerun['Args'])
+    if (Object.keys(SceneFunctionRerun).length != 0) {
+        //SceneFunctions[SceneFunctionRerun['Name']](SceneFunctionRerun['Args'])
+        TopText = SceneFunctionRerun['TopText'] || ""
+        EndText = SceneFunctionRerun['EndText'] || ""
     }
     SceneManager(CurrentScene)
     document.getElementById("Day").textContent = "Day: " + Day + " " + GetDayName().substring(0,3)
